@@ -783,12 +783,12 @@ forvalues i = 1/`N_qs' {
 	local rel "`vrel'"
 
 	// Replace #{var} references with variable names
-	local rel = ustrregexra("`rel'", "#\{(\w+)\}", "\1")
+	local rel = ustrregexra("`rel'", "#\{(\w+)\}", "$1")
 
 	// Replace single = with == (not != <= >= ==)
-	local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "\1==\2")
+	local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "$1==$2")
 	// Handle = at start of string
-	local rel = ustrregexra("`rel'", "^=([^=])", "==\1")
+	local rel = ustrregexra("`rel'", "^=([^=])", "==$1")
 
 	// Replace 'and' with '&' and 'or' with '|'
 	local rel = subinstr("`rel'", " and ", " & ", .)
@@ -796,8 +796,8 @@ forvalues i = 1/`N_qs' {
 
 	// Replace selected(var, 'val') patterns
 	// For select_one: selected(var, 'val') -> var == val
-	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "\1==\2")
-	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*""([^""]+)""\)", "\1==\2")
+	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "$1==$2")
+	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*""([^""]+)""\)", "$1==$2")
 
 	// Replace not() with !()
 	local rel = subinstr("`rel'", "not(", "!(", .)
@@ -1173,12 +1173,12 @@ if `n_repeats' > 0 {
 			if "`vrel'" == "" | "`vrel'" == "." continue
 
 			local rel "`vrel'"
-			local rel = ustrregexra("`rel'", "#\{(\w+)\}", "\1")
-			local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "\1==$2")
-			local rel = ustrregexra("`rel'", "^=([^=])", "==\1")
+			local rel = ustrregexra("`rel'", "#\{(\w+)\}", "$1")
+			local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "$1==$2")
+			local rel = ustrregexra("`rel'", "^=([^=])", "==$1")
 			local rel = subinstr("`rel'", " and ", " & ", .)
 			local rel = subinstr("`rel'", " or ", " | ", .)
-			local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "\1==\2")
+			local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "$1==$2")
 			local rel = subinstr("`rel'", "not(", "!(", .)
 
 			frame `frame_rg_`ri'' {
