@@ -46,7 +46,9 @@ syntax, ///
 	REFUSED(integer -999) /// value used to indicate "refused to answer" responses
 	REPLACE /// overwrite existing .dta files
 	NOBS(integer 1000) /// number of observations in main dataset
-	MAXreps(integer 10)] // maximum repetitions per repeat group
+	MAXreps(integer 10) /// maximum repetitions per repeat group
+	DUMMIES(string) /// variable names to force as 0/1 binary (e.g., "sasso_treatment trt_arm")
+	FIX(string)] // variable=value pairs to fix at constant values (e.g., "respondent_available=1 consented=1")
 
 version 16
 
@@ -71,6 +73,26 @@ if _rc {
 }
 
 set seed 12345
+
+// Parse fix() option into parallel lists of variable names and values
+local n_fixed = 0
+if `"`fix'"' != "" {
+	local fix_remaining `"`fix'"'
+	while `"`fix_remaining'"' != "" {
+		gettoken pair fix_remaining : fix_remaining
+		local pair = strtrim("`pair'")
+		if "`pair'" == "" continue
+		// Split on =
+		local eqpos = strpos("`pair'", "=")
+		if `eqpos' == 0 {
+			noisily display as error "fix() syntax error: `pair' (expected varname=value)"
+			exit 198
+		}
+		local ++n_fixed
+		local fix_var_`n_fixed' = substr("`pair'", 1, `eqpos' - 1)
+		local fix_val_`n_fixed' = substr("`pair'", `eqpos' + 1, .)
+	}
+}
 
 *===============================================================================
 * 	Phase 2: Parse Survey Sheet
@@ -553,6 +575,33 @@ forvalues i = 1/`N_qs' {
 		cap confirm variable `vname'
 		if !_rc continue
 
+		// Check if this variable has a fixed value
+		local is_fixed_var = 0
+		forvalues _f = 1/`n_fixed' {
+			if "`vname'" == "`fix_var_`_f''" {
+				gen `vname' = `fix_val_`_f''
+				label variable `vname' "`vlabel'"
+				cap label values `vname' `vallabel'
+				local is_fixed_var = 1
+				continue, break
+			}
+		}
+		if `is_fixed_var' continue
+
+		// Check if this variable should be a 0/1 dummy
+		local is_dummy_var = 0
+		if "`dummies'" != "" {
+			foreach _dv in `dummies' {
+				if "`vname'" == "`_dv'" {
+					gen byte `vname' = (runiform() > 0.5)
+					label variable `vname' "`vlabel'"
+					local is_dummy_var = 1
+					continue, break
+				}
+			}
+		}
+		if `is_dummy_var' continue
+
 		// === String (type 1) ===
 		if `qtype' == 1 {
 
@@ -1018,6 +1067,33 @@ if `n_repeats' > 0 {
 
 				cap confirm variable `vname'
 				if !_rc continue
+
+				// Check if this variable has a fixed value
+				local is_fixed_var = 0
+				forvalues _f = 1/`n_fixed' {
+					if "`vname'" == "`fix_var_`_f''" {
+						gen `vname' = `fix_val_`_f''
+						label variable `vname' "`vlabel'"
+						cap label values `vname' `vallabel'
+						local is_fixed_var = 1
+						continue, break
+					}
+				}
+				if `is_fixed_var' continue
+
+				// Check if this variable should be a 0/1 dummy
+				local is_dummy_var = 0
+				if "`dummies'" != "" {
+					foreach _dv in `dummies' {
+						if "`vname'" == "`_dv'" {
+							gen byte `vname' = (runiform() > 0.5)
+							label variable `vname' "`vlabel'"
+							local is_dummy_var = 1
+							continue, break
+						}
+					}
+				}
+				if `is_dummy_var' continue
 
 				// === String ===
 				if `qtype' == 1 {

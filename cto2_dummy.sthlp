@@ -29,11 +29,13 @@
 {synopt:{opt save:folder(filepath)}}folder where .dta files will be saved{p_end}
 
 {syntab:Optional}
-{synopt:{opt dk(integer)}}value for "don't know" responses; default is {cmd:-999}{p_end}
+{synopt:{opt dk(integer)}}value for "don't know" responses; default is {cmd:-777}{p_end}
 {synopt:{opt other(integer)}}value for "other (specify)" responses; default is {cmd:-555}{p_end}
-{synopt:{opt refused(integer)}}value for "refused" responses; default is {cmd:-777}{p_end}
+{synopt:{opt refused(integer)}}value for "refused" responses; default is {cmd:-999}{p_end}
 {synopt:{opt nobs(integer)}}number of observations in main dataset; default is {cmd:1000}{p_end}
 {synopt:{opt maxreps(integer)}}maximum repetitions per repeat group; default is {cmd:10}{p_end}
+{synopt:{opt dummies(string)}}variable names to generate as 0/1 binary{p_end}
+{synopt:{opt fix(string)}}variable=value pairs to fix at constant values{p_end}
 {synopt:{opt replace}}overwrite existing .dta files{p_end}
 {synoptline}
 
@@ -99,7 +101,7 @@ will be saved. The folder will be created if it does not exist.
 
 {phang}
 {opt dk(integer)} specifies the numeric value used in the survey instrument to
-represent "don't know" responses. Default is {cmd:-999}. These values are mapped
+represent "don't know" responses. Default is {cmd:-777}. These values are mapped
 to Stata's extended missing value {cmd:.d}.
 
 {phang}
@@ -108,7 +110,7 @@ responses. Default is {cmd:-555}. Mapped to {cmd:.o}.
 
 {phang}
 {opt refused(integer)} specifies the numeric value used for "refused to answer"
-responses. Default is {cmd:-777}. Mapped to {cmd:.r}.
+responses. Default is {cmd:-999}. Mapped to {cmd:.r}.
 
 {phang}
 {opt nobs(integer)} specifies the number of observations to generate in the
@@ -118,6 +120,18 @@ main (survey-level) dataset. Default is {cmd:1000}.
 {opt maxreps(integer)} specifies the maximum number of repetitions per parent
 observation in repeat groups. This prevents dataset explosion when repeat_count
 variables have large values. Default is {cmd:10}.
+
+{phang}
+{opt dummies(string)} specifies variable names (space-separated) that should be
+generated as 0/1 binary indicators regardless of their type in the instrument.
+Useful for treatment assignment variables that are stored as calculate fields
+but should be treated as dummies. Example: {cmd:dummies(sasso_treatment trt_arm)}.
+
+{phang}
+{opt fix(string)} specifies variable=value pairs (space-separated) that fix
+variables at constant values. Useful for ensuring specific survey paths are
+always followed in the dummy data (e.g., all respondents consent).
+Example: {cmd:fix(respondent_available=1 consented=1)}.
 
 {phang}
 {opt replace} permits overwriting existing .dta files in the save folder.
@@ -134,6 +148,9 @@ variables have large values. Default is {cmd:10}.
 
 {pstd}Fewer observations:{p_end}
 {phang2}{cmd:. cto2_dummy, inst("endline.xlsx") savefolder("./output") nobs(500) replace}{p_end}
+
+{pstd}Force treatment variable as dummy and fix consent path:{p_end}
+{phang2}{cmd:. cto2_dummy, inst("endline.xlsx") savefolder("./output") dummies(sasso_treatment) fix(respondent_available=1 consented=1) replace}{p_end}
 
 
 {marker author}{...}
