@@ -8,9 +8,9 @@ program define cto2_dummy, rclass
 syntax, ///
 	INSTname(string) /// filepath to the Excel survey instrument
 	SAVEfolder(string) /// filepath to the folder where dummy datasets should be saved
-	[DK(integer -999) /// value used to indicate "don't know" responses
+	[DK(integer -777) /// value used to indicate "don't know" responses
 	OTHER(integer -555) /// value used to indicate "other (specify)" responses
-	REFUSED(integer -777) /// value used to indicate "refused to answer" responses
+	REFUSED(integer -999) /// value used to indicate "refused to answer" responses
 	REPLACE /// overwrite existing .dta files
 	NOBS(integer 1000) /// number of observations in main dataset
 	MAXreps(integer 10)] // maximum repetitions per repeat group
@@ -615,9 +615,10 @@ forvalues i = 1/`N_qs' {
 			label variable `vname' "`vlabel'"
 
 			// Special missing codes (3% total)
-			if `dk' != 1 replace `vname' = .d if runiform() < 0.01
-			if `refused' != 1 replace `vname' = .r if runiform() < 0.01
-			if `other' != 1 replace `vname' = .o if runiform() < 0.01
+			// Replace special code values with extended missings
+			if `dk' != 1 replace `vname' = .d if `vname' == `dk'
+			if `refused' != 1 replace `vname' = .r if `vname' == `refused'
+			if `other' != 1 replace `vname' = .o if `vname' == `other'
 
 		}
 
@@ -709,7 +710,7 @@ forvalues i = 1/`N_qs' {
 
 			label variable `vname' "`vlabel'"
 
-			// Special missing codes
+			// Randomly assign extended missing values (~3% total)
 			if `dk' != 1 replace `vname' = .d if runiform() < 0.01
 			if `refused' != 1 replace `vname' = .r if runiform() < 0.01
 			if `other' != 1 replace `vname' = .o if runiform() < 0.01
@@ -1056,9 +1057,10 @@ if `n_repeats' > 0 {
 						gen `vname' = floor(runiform() * 5) + 1
 					}
 					label variable `vname' "`vlabel'"
-					if `dk' != 1 replace `vname' = .d if runiform() < 0.01
-					if `refused' != 1 replace `vname' = .r if runiform() < 0.01
-					if `other' != 1 replace `vname' = .o if runiform() < 0.01
+					// Replace special code values with extended missings
+					if `dk' != 1 replace `vname' = .d if `vname' == `dk'
+					if `refused' != 1 replace `vname' = .r if `vname' == `refused'
+					if `other' != 1 replace `vname' = .o if `vname' == `other'
 				}
 
 				// === Select Multiple ===
