@@ -507,27 +507,28 @@ frame `maindata' {
 
 	set obs `nobs'
 
-	// KEY - unique identifier
-	gen str50 KEY = "uuid:" + string(_n, "%015.0f") + ///
+	// key - unique identifier (lowercase to match cto2 output)
+	gen str50 key = "uuid:" + string(_n, "%015.0f") + ///
 		"-" + string(floor(runiform() * 100000), "%05.0f")
+	label variable key "survey uid"
 
-	// SubmissionDate
-	gen double SubmissionDate = clock("2025-01-01 08:00:00", "YMDhms") + ///
+	// submissiondate (lowercase to match cto2 output)
+	gen double submissiondate = clock("2025-01-01 08:00:00", "YMDhms") + ///
 		floor(runiform() * 365 * 24 * 3600) * 1000
-	format SubmissionDate %tc
-	label variable SubmissionDate "Submission Date"
+	format submissiondate %tc
+	label variable submissiondate "time of survey submission"
 
-	// formdef_version
-	gen str20 formdef_version = "`form_version'"
-	label variable formdef_version "Form Definition Version"
+	// formdef_version (numeric to match cto2 destring)
+	gen formdef_version = real("`form_version'")
+	label variable formdef_version "survey version"
 
 	// starttime
-	gen double starttime = SubmissionDate - floor(runiform() * 3600 + 600) * 1000
+	gen double starttime = submissiondate - floor(runiform() * 3600 + 600) * 1000
 	format starttime %tc
 	label variable starttime "Start Time"
 
 	// endtime
-	gen double endtime = SubmissionDate
+	gen double endtime = submissiondate
 	format endtime %tc
 	label variable endtime "End Time"
 
@@ -823,15 +824,16 @@ forvalues i = 1/`N_qs' {
 		else if `qtype' == 7 {
 
 			// Sierra Leone approximate coordinates (center: 8.5, -11.8)
+			// Order matches cto2: Accuracy, Latitude, Longitude, Altitude
+			gen double `vname'Accuracy = runiform() * 50
 			gen double `vname'Latitude = 7 + runiform() * 3
 			gen double `vname'Longitude = -13 + runiform() * 3
 			gen double `vname'Altitude = runiform() * 500
-			gen double `vname'Accuracy = runiform() * 50
 
+			label variable `vname'Accuracy "`vlabel': Accuracy"
 			label variable `vname'Latitude "`vlabel': Latitude"
 			label variable `vname'Longitude "`vlabel': Longitude"
 			label variable `vname'Altitude "`vlabel': Altitude"
-			label variable `vname'Accuracy "`vlabel': Accuracy"
 
 		}
 
@@ -966,8 +968,9 @@ if `n_repeats' > 0 {
 		frame `frame_rg_`ri'' {
 
 			// Start with 0 obs, will expand
-			gen str50 KEY = ""
-			gen str50 PARENT_KEY = ""
+			// Key naming matches cto2: `key` (survey-level) + `repeat_name_key`
+			gen str50 key = ""
+			gen str50 `rg_name'_key = ""
 			gen long _parent_obs = .
 			gen long _rep_index = .
 
@@ -1020,7 +1023,7 @@ if `n_repeats' > 0 {
 
 			// Get parent KEY
 			frame `parent_frame' {
-				local pkey = KEY[`pobs']
+				local pkey = key[`pobs']
 			}
 
 			// Add rows to repeat group frame
@@ -1032,8 +1035,8 @@ if `n_repeats' > 0 {
 
 					forvalues j = 1/`this_rc' {
 						local row = `old_N' + `j'
-						replace PARENT_KEY = "`pkey'" in `row'
-						replace KEY = "`pkey'/`rg_name'[`j']" in `row'
+						replace key = "`pkey'" in `row'
+						replace `rg_name'_key = "`pkey'/`rg_name'[`j']" in `row'
 						replace _parent_obs = `pobs' in `row'
 						replace _rep_index = `j' in `row'
 					}
@@ -1352,7 +1355,7 @@ frame `maindata' {
 	// Value labels already defined when frame was created
 
 	// Check for save path
-	local main_savepath "`savefolder'/`form_id'.dta"
+	local main_savepath "`savefolder'/survey.dta"
 
 	cap confirm file "`main_savepath'"
 	if !_rc & "`replace'" == "" {
@@ -1379,7 +1382,7 @@ noisily display as text "{hline 60}"
 noisily display as text "  Instrument:   `instname'"
 noisily display as text "  Form ID:      `form_id'"
 noisily display as text "  Output:       `savefolder'"
-noisily display as text "  Main dataset: `form_id'.dta (`nobs' obs)"
+noisily display as text "  Main dataset: survey.dta (`nobs' obs)"
 
 if `n_repeats' > 0 {
 	noisily display as text "  Repeat groups: `n_repeats'"
