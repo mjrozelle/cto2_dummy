@@ -753,17 +753,26 @@ forvalues i = 1/`N_qs' {
 			local hi = 100
 
 			if "`vconstraint'" != "" {
-				// Try to extract lower bound: .>=N or .>N
-				cap local lo_match = ustrregexs(1) ///
-					if ustrregexm("`vconstraint'", "\.[ ]*>=?[ ]*([0-9]+)")
-				if !_rc & "`lo_match'" != "" {
-					local lo = `lo_match'
+				// Extract lower bound from .>=N or .>N
+				if ustrregexm("`vconstraint'", "\.[ ]*>=[ ]*([0-9]+)") {
+					local lo = real(ustrregexs(1))
 				}
-				// Try to extract upper bound: .<=N or .<N
-				cap local hi_match = ustrregexs(1) ///
-					if ustrregexm("`vconstraint'", "\.[ ]*<=?[ ]*([0-9]+)")
-				if !_rc & "`hi_match'" != "" {
-					local hi = `hi_match'
+				else if ustrregexm("`vconstraint'", "\.[ ]*>[ ]*([0-9]+)") {
+					// Strict inequality: .>N means minimum is N+1
+					local lo = real(ustrregexs(1)) + 1
+				}
+				// Extract upper bound from .<=N or .<N
+				if ustrregexm("`vconstraint'", "\.[ ]*<=[ ]*([0-9]+)") {
+					local hi = real(ustrregexs(1))
+				}
+				else if ustrregexm("`vconstraint'", "\.[ ]*<[ ]*([0-9]+)") {
+					// Strict inequality: .<N means maximum is N-1
+					local hi = real(ustrregexs(1)) - 1
+				}
+				// Safety: ensure lo <= hi
+				if `lo' > `hi' {
+					local lo = 0
+					local hi = 100
 				}
 			}
 
@@ -1195,12 +1204,22 @@ if `n_repeats' > 0 {
 					local lo = 0
 					local hi = 100
 					if "`vconstraint'" != "" {
-						cap local lo_match = ustrregexs(1) ///
-							if ustrregexm("`vconstraint'", "\.[ ]*>=?[ ]*([0-9]+)")
-						if !_rc & "`lo_match'" != "" local lo = `lo_match'
-						cap local hi_match = ustrregexs(1) ///
-							if ustrregexm("`vconstraint'", "\.[ ]*<=?[ ]*([0-9]+)")
-						if !_rc & "`hi_match'" != "" local hi = `hi_match'
+						if ustrregexm("`vconstraint'", "\.[ ]*>=[ ]*([0-9]+)") {
+							local lo = real(ustrregexs(1))
+						}
+						else if ustrregexm("`vconstraint'", "\.[ ]*>[ ]*([0-9]+)") {
+							local lo = real(ustrregexs(1)) + 1
+						}
+						if ustrregexm("`vconstraint'", "\.[ ]*<=[ ]*([0-9]+)") {
+							local hi = real(ustrregexs(1))
+						}
+						else if ustrregexm("`vconstraint'", "\.[ ]*<[ ]*([0-9]+)") {
+							local hi = real(ustrregexs(1)) - 1
+						}
+						if `lo' > `hi' {
+							local lo = 0
+							local hi = 100
+						}
 					}
 					if "`vtype'" == "decimal" {
 						gen double `vname' = runiform() * (`hi' - `lo') + `lo'
