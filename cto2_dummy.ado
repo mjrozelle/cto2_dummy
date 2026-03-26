@@ -2,6 +2,39 @@
 *! Author: Michael Rozelle <michael.rozelle@wur.nl>
 *! Version 0.0.1  Created: March 2026
 
+// Helper: parse a single SurveyCTO condition and apply it
+cap program drop _cto2_dummy_apply_rel
+program define _cto2_dummy_apply_rel
+	args vname qtype raw_condition
+
+	if "`raw_condition'" == "" | "`raw_condition'" == "." exit
+
+	local rel "`raw_condition'"
+
+	// Replace #{var} references with variable names
+	local rel = ustrregexra("`rel'", "#\{(\w+)\}", "$1")
+	// Replace single = with ==
+	local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "$1==$2")
+	local rel = ustrregexra("`rel'", "^=([^=])", "==$1")
+	// Replace 'and'/'or' with '&'/'|'
+	local rel = subinstr("`rel'", " and ", " & ", .)
+	local rel = subinstr("`rel'", " or ", " | ", .)
+	// Replace selected() patterns
+	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "$1==$2")
+	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*""([^""]+)""\)", "$1==$2")
+	// Replace not() with !()
+	local rel = subinstr("`rel'", "not(", "!(", .)
+
+	// Apply: set to missing where condition is false
+	if `qtype' == 1 | `qtype' == 3 {
+		cap replace `vname' = "" if !(`rel')
+	}
+	else if inlist(`qtype', 2, 4, 5, 6, 7) {
+		cap replace `vname' = . if !(`rel')
+	}
+
+end
+
 cap program drop cto2_dummy
 program define cto2_dummy, rclass
 
@@ -394,25 +427,9 @@ frame `nonrepeat_groups' {
 
 }
 
-// Merge cumulative conditions back
+// Keep group conditions accessible for per-condition relevancy application
+// (don't merge into a single cumulative expression - apply each separately)
 cwf `qs'
-if `n_groups' > 0 {
-	frlink m:1 group, frame(`nonrepeat_groups' gindex)
-	frget cumulative_con, from(`nonrepeat_groups')
-	replace relevant = cumulative_con + ///
-		cond(!missing(relevant) & relevant != "", " & " + relevant, "") ///
-		if !missing(cumulative_con) & cumulative_con != ""
-	drop `nonrepeat_groups' cumulative_con
-}
-
-if `n_repeats' > 0 {
-	frlink m:1 repeat_group, frame(`repeat_groups' gindex)
-	frget cumulative_con, from(`repeat_groups')
-	replace relevant = cumulative_con + ///
-		cond(!missing(relevant) & relevant != "", " & " + relevant, "") ///
-		if !missing(cumulative_con) & cumulative_con != ""
-	drop `repeat_groups' cumulative_con
-}
 
 *===============================================================================
 * 	Build value label definitions
@@ -575,24 +592,28 @@ forvalues i = 1/`N_qs' {
 		// === Select One (type 2) ===
 		else if `qtype' == 2 {
 
-			// Get choice values for this list
+			// Get non-special choice values for this list
 			frame `choices' {
-				levelsof real_value if list_name == "`vallabel'", local(cvals)
+				levelsof real_value if list_name == "`vallabel'" ///
+					& !inlist(real_value, `dk', `refused', `other'), local(cvals)
 				local n_choices = `r(r)'
+				// Check if special codes exist in this list
+				count if list_name == "`vallabel'" & inlist(real_value, `dk', `refused', `other')
+				local has_special = `r(N)' > 0
 			}
 
 			if `n_choices' > 0 {
 				// Create numeric variable
 				gen `vname' = .
 
-				// Build array of values
+				// Build array of non-special values
 				local ci = 0
 				foreach cv in `cvals' {
 					local ++ci
 					local cval_`ci' = `cv'
 				}
 
-				// Randomly assign values
+				// Randomly assign from non-special values
 				tempvar _trand
 				gen double `_trand' = runiform()
 				forvalues ci = 1/`n_choices' {
@@ -601,24 +622,24 @@ forvalues i = 1/`N_qs' {
 					replace `vname' = `cval_`ci'' ///
 						if `_trand' >= `lower' & `_trand' < `upper'
 				}
-				// Catch any remaining
 				replace `vname' = `cval_1' if missing(`vname')
 				drop `_trand'
 
 				// Apply value label (already defined in frame)
 				cap label values `vname' `vallabel'
+
+				// Inject special missing codes (~5% total, only if list has them)
+				if `has_special' {
+					if `dk' != 1 replace `vname' = .d if runiform() < 0.017
+					if `refused' != 1 replace `vname' = .r if runiform() < 0.017
+					if `other' != 1 replace `vname' = .o if runiform() < 0.017
+				}
 			}
 			else {
 				gen `vname' = floor(runiform() * 5) + 1
 			}
 
 			label variable `vname' "`vlabel'"
-
-			// Special missing codes (3% total)
-			// Replace special code values with extended missings
-			if `dk' != 1 replace `vname' = .d if `vname' == `dk'
-			if `refused' != 1 replace `vname' = .r if `vname' == `refused'
-			if `other' != 1 replace `vname' = .o if `vname' == `other'
 
 		}
 
@@ -710,10 +731,10 @@ forvalues i = 1/`N_qs' {
 
 			label variable `vname' "`vlabel'"
 
-			// Randomly assign extended missing values (~3% total)
-			if `dk' != 1 replace `vname' = .d if runiform() < 0.01
-			if `refused' != 1 replace `vname' = .r if runiform() < 0.01
-			if `other' != 1 replace `vname' = .o if runiform() < 0.01
+			// Randomly assign extended missing values (~5% total)
+			if `dk' != 1 replace `vname' = .d if runiform() < 0.017
+			if `refused' != 1 replace `vname' = .r if runiform() < 0.017
+			if `other' != 1 replace `vname' = .o if runiform() < 0.017
 
 		}
 
@@ -775,51 +796,38 @@ forvalues i = 1/`N_qs' {
 	local vname = name[`i']
 	local qtype = question_type[`i']
 	local vrel = relevant[`i']
+	local vgroup = group[`i']
 
 	if "`vname'" == "" | "`vname'" == "." continue
-	if "`vrel'" == "" | "`vrel'" == "." continue
 
-	// Transform relevancy to Stata expression
-	local rel "`vrel'"
+	// 1. Apply the variable's own relevancy condition
+	cwf `maindata'
+	_cto2_dummy_apply_rel `vname' `qtype' "`vrel'"
+	cwf `qs'
 
-	// Replace #{var} references with variable names
-	local rel = ustrregexra("`rel'", "#\{(\w+)\}", "$1")
-
-	// Replace single = with == (not != <= >= ==)
-	local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "$1==$2")
-	// Handle = at start of string
-	local rel = ustrregexra("`rel'", "^=([^=])", "==$1")
-
-	// Replace 'and' with '&' and 'or' with '|'
-	local rel = subinstr("`rel'", " and ", " & ", .)
-	local rel = subinstr("`rel'", " or ", " | ", .)
-
-	// Replace selected(var, 'val') patterns
-	// For select_one: selected(var, 'val') -> var == val
-	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "$1==$2")
-	local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*""([^""]+)""\)", "$1==$2")
-
-	// Replace not() with !()
-	local rel = subinstr("`rel'", "not(", "!(", .)
-
-	frame `maindata' {
-
-		// Apply relevancy - set to missing where condition is false
-		if `qtype' == 1 | `qtype' == 3 {
-			// String variables
-			cap replace `vname' = "" if !(`rel')
+	// 2. Walk up the standard group chain, applying each condition separately
+	if `vgroup' > 0 & `n_groups' > 0 {
+		local gw = `vgroup'
+		while `gw' > 0 {
+			// Look up this group's condition in the groups frame
+			local gcond ""
+			local gw_next = 0
+			frame `groups' {
+				forvalues _gr = 1/`c(N)' {
+					if gtype[`_gr'] == 1 & gindex[`_gr'] == `gw' {
+						local gcond = conditions[`_gr']
+						local gw_next = within[`_gr']
+						continue, break
+					}
+				}
+			}
+			if "`gcond'" != "" & "`gcond'" != "." {
+				cwf `maindata'
+				_cto2_dummy_apply_rel `vname' `qtype' "`gcond'"
+				cwf `qs'
+			}
+			local gw = `gw_next'
 		}
-		else if inlist(`qtype', 2, 4) {
-			// Numeric variables
-			cap replace `vname' = . if !(`rel')
-		}
-		else if `qtype' == 5 {
-			cap replace `vname' = . if !(`rel')
-		}
-		else if `qtype' == 6 {
-			cap replace `vname' = . if !(`rel')
-		}
-
 	}
 
 }
@@ -1031,8 +1039,11 @@ if `n_repeats' > 0 {
 				// === Select One ===
 				else if `qtype' == 2 {
 					frame `choices' {
-						levelsof real_value if list_name == "`vallabel'", local(cvals)
+						levelsof real_value if list_name == "`vallabel'" ///
+							& !inlist(real_value, `dk', `refused', `other'), local(cvals)
 						local n_choices = `r(r)'
+						count if list_name == "`vallabel'" & inlist(real_value, `dk', `refused', `other')
+						local has_special = `r(N)' > 0
 					}
 					if `n_choices' > 0 {
 						gen `vname' = .
@@ -1042,7 +1053,7 @@ if `n_repeats' > 0 {
 							local cval_`ci' = `cv'
 						}
 						tempvar _trand
-					gen double `_trand' = runiform()
+						gen double `_trand' = runiform()
 						forvalues ci = 1/`n_choices' {
 							local lower = (`ci' - 1) / `n_choices'
 							local upper = `ci' / `n_choices'
@@ -1052,15 +1063,17 @@ if `n_repeats' > 0 {
 						replace `vname' = `cval_1' if missing(`vname')
 						drop `_trand'
 						cap label values `vname' `vallabel'
+						// Inject special codes (~5% total)
+						if `has_special' {
+							if `dk' != 1 replace `vname' = .d if runiform() < 0.017
+							if `refused' != 1 replace `vname' = .r if runiform() < 0.017
+							if `other' != 1 replace `vname' = .o if runiform() < 0.017
+						}
 					}
 					else {
 						gen `vname' = floor(runiform() * 5) + 1
 					}
 					label variable `vname' "`vlabel'"
-					// Replace special code values with extended missings
-					if `dk' != 1 replace `vname' = .d if `vname' == `dk'
-					if `refused' != 1 replace `vname' = .r if `vname' == `refused'
-					if `other' != 1 replace `vname' = .o if `vname' == `other'
 				}
 
 				// === Select Multiple ===
@@ -1120,9 +1133,10 @@ if `n_repeats' > 0 {
 						gen `vname' = floor(runiform() * (`hi' - `lo' + 1)) + `lo'
 					}
 					label variable `vname' "`vlabel'"
-					if `dk' != 1 replace `vname' = .d if runiform() < 0.01
-					if `refused' != 1 replace `vname' = .r if runiform() < 0.01
-					if `other' != 1 replace `vname' = .o if runiform() < 0.01
+					// ~5% total extended missing
+					if `dk' != 1 replace `vname' = .d if runiform() < 0.017
+					if `refused' != 1 replace `vname' = .r if runiform() < 0.017
+					if `other' != 1 replace `vname' = .o if runiform() < 0.017
 				}
 
 				// === Date ===
@@ -1168,25 +1182,36 @@ if `n_repeats' > 0 {
 			local vname = name[`i']
 			local qtype = question_type[`i']
 			local vrel = relevant[`i']
+			local vgroup = group[`i']
 
 			if "`vname'" == "" | "`vname'" == "." continue
-			if "`vrel'" == "" | "`vrel'" == "." continue
 
-			local rel "`vrel'"
-			local rel = ustrregexra("`rel'", "#\{(\w+)\}", "$1")
-			local rel = ustrregexra("`rel'", "([^!<>=])=([^=])", "$1==$2")
-			local rel = ustrregexra("`rel'", "^=([^=])", "==$1")
-			local rel = subinstr("`rel'", " and ", " & ", .)
-			local rel = subinstr("`rel'", " or ", " | ", .)
-			local rel = ustrregexra("`rel'", "selected\((\w+),[ ]*'([^']+)'\)", "$1==$2")
-			local rel = subinstr("`rel'", "not(", "!(", .)
+			// Apply variable's own condition
+			cwf `frame_rg_`ri''
+			_cto2_dummy_apply_rel `vname' `qtype' "`vrel'"
+			cwf `qs'
 
-			frame `frame_rg_`ri'' {
-				if `qtype' == 1 | `qtype' == 3 {
-					cap replace `vname' = "" if !(`rel')
-				}
-				else if inlist(`qtype', 2, 4, 5, 6) {
-					cap replace `vname' = . if !(`rel')
+			// Walk up standard group chain
+			if `vgroup' > 0 & `n_groups' > 0 {
+				local gw = `vgroup'
+				while `gw' > 0 {
+					local gcond ""
+					local gw_next = 0
+					frame `groups' {
+						forvalues _gr = 1/`c(N)' {
+							if gtype[`_gr'] == 1 & gindex[`_gr'] == `gw' {
+								local gcond = conditions[`_gr']
+								local gw_next = within[`_gr']
+								continue, break
+							}
+						}
+					}
+					if "`gcond'" != "" & "`gcond'" != "." {
+						cwf `frame_rg_`ri''
+						_cto2_dummy_apply_rel `vname' `qtype' "`gcond'"
+						cwf `qs'
+					}
+					local gw = `gw_next'
 				}
 			}
 
